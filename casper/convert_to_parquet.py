@@ -44,10 +44,9 @@ def get_global_attributes(ds):
     return attrs_list
 
 
-def create_markdown(md, ds, input_filename, format_type='csv'):
+def create_markdown(md, ds, input_filename):
     """Create markdown file contents"""
-    format_upper = format_type.upper()
-    header = f"# {len(md)} {format_upper} files created for {input_filename} based on dimensional schemas\n\n"
+    header = f"# {len(md)} Parquet files created for {input_filename} based on dimensional schemas\n\n"
     data = ""
     for k, v in md.items():
         data += f"## {v['filename']}\n"
@@ -81,29 +80,27 @@ def json_readme(ds, input_filename, json_obj):
     return
 
 
-def convert_to_csv(fname: str, zip_file: str, logger: Logger = default_logger, output_format: str = 'csv') -> int:
+def convert_to_parquet(fname: str, zip_file: str, logger: Logger = default_logger) -> int:
     """
-    Converts NetCDF file to one or more CSV or Parquet files. The number of files will
+    Converts NetCDF file to one or more Parquet files. The number of files will
     be based on the dimensions identified in the NetCDF file.
 
     Parameter
     ----------
     fname: str
-        The name of the NetCDF file to be converted
+        The name of the NetCDF file to be converted to Parquet file(s)
     zip_file: str
         The name of the zipfile to create
     logger: Logger
         Logger instance for output messages
-    output_format: str
-        Output format: 'csv' (default) or 'parquet'
 
     Returns
     -------
     int
-        Number of output files created
+        Number of Parquet files created
     """
     xr.set_options(use_new_combine_kwarg_defaults=True)
-    num_output_files = 0
+    num_parquet_files = 0
     schemas: dict[str | tuple[str, ...], list[str]] = {}
     md = {}
     json_obj: dict[str, str | dict] = {}
@@ -132,13 +129,13 @@ def convert_to_csv(fname: str, zip_file: str, logger: Logger = default_logger, o
         with zipfile.ZipFile(
             zip_file, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
         ) as zf:
-            logger.info(f"Creating {len(vals)} {output_format.upper()} files for {input_filename}")
+            logger.info(f"Creating {len(vals)} Parquet files for {input_filename}")
 
             for idx in range(len(vals)):
                 dims, vvs = vals[idx]
                 # Use Harmony generated filename
-                op_file = f"{input_filename}-{idx}.{output_format}"
-                op_file = generate_output_filename(op_file, ext=output_format, is_reformatted=True)
+                op_file = f"{input_filename}-{idx}.parquet"
+                op_file = generate_output_filename(op_file, ext="parquet", is_reformatted=True)
                 ds = xr.combine_by_coords([data[vv].rename(vv) for vv in vvs])
                 # Order columns: dimensions, non-dimensional coordinates, rest of variables
                 cols = list(dims) + list(ds.coords) + vvs
@@ -159,44 +156,25 @@ def convert_to_csv(fname: str, zip_file: str, logger: Logger = default_logger, o
                     "variables": vvs,
                 }
 
-                # Convert to DataFrame and write based on output format
-                if output_format == 'parquet':
-                    df = ds.compute().to_dataframe().dropna(how="all", subset=vvs)
-                    
-                    # Write parquet file to a temporary location, then add to zip
-                    import tempfile
-                    import os
-                    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
-                        df.to_parquet(tmp.name, engine="pyarrow", compression="snappy")
-                        tmp.flush()
-                        zf.write(tmp.name, op_file)
-                        os.unlink(tmp.name)
-                    del df
-                else:  # csv format
-                    with zf.open(op_file, "w", force_zip64=True) as csv_file:
-                        chunk_size = 10
-                        data_len = 0
-                        prime_dim = next(iter(ds.sizes.items()))
-                        dim_var = prime_dim[0]
-                        data_len = prime_dim[1]
-                        for i in range(0, data_len, chunk_size):
-                            # Process a slice of the dataset
-                            indexer = {dim_var: slice(i, i + chunk_size)}
-                            ds_chunk = ds.isel(indexer)
-                            chunk = ds_chunk.compute()
-                            # Convert the small chunk to a pandas DataFrame
-                            df_chunk = chunk.to_dataframe().dropna(how="all", subset=vvs)
+                # Convert to DataFrame and write to parquet
+                df = ds.compute().to_dataframe().dropna(how="all", subset=vvs)
+                
+                # Write parquet file to a temporary location, then add to zip
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+                    df.to_parquet(tmp.name, engine="pyarrow", compression="snappy")
+                    tmp.flush()
+                    zf.write(tmp.name, op_file)
+                    os.unlink(tmp.name)
 
-                            # Write header for the first chunk only
-                            df_chunk.to_csv(csv_file, header=(i == 0))
-
-                            del df_chunk
+                del df
 
                 logger.info(f" {op_file} added to zip file")
-                num_output_files += 1
+                num_parquet_files += 1
 
             # Create markdown and json Readme files
-            readme_contents = create_markdown(md, data, input_filename, output_format)
+            readme_contents = create_markdown(md, data, input_filename)
             readme_file = "Readme.md"
             with zf.open(readme_file, "w") as file:
                 file.write(readme_contents.encode("utf-8"))
@@ -211,30 +189,21 @@ def convert_to_csv(fname: str, zip_file: str, logger: Logger = default_logger, o
         logger.error("File conversion failed: %s", e)
         raise
 
-    return num_output_files
+    return num_parquet_files
 
 
 def main():
     """Entry point for the casper command line tool."""
-    import argparse
     logging.basicConfig(
         stream=sys.stdout,
         format="[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s",
         level=logging.INFO,
     )
-    
-    parser = argparse.ArgumentParser(description="Convert NetCDF files to CSV or Parquet format")
-    parser.add_argument("input_file", help="Input NetCDF file to convert")
-    parser.add_argument(
-        "--format",
-        choices=["csv", "parquet"],
-        default="csv",
-        help="Output format (default: csv)"
-    )
-    args = parser.parse_args()
+    if len(sys.argv) < 2:
+        print("Must specify an input file")
+        exit()
 
-    input_file = args.input_file
-    output_format = args.format
+    input_file = sys.argv[1]
 
     """Parse arguments and run casper on specified input file."""
     if not valid_input_file(input_file):
@@ -244,7 +213,7 @@ def main():
         raise ValueError("Input file not valid")
     zip_file_name = f"{input_file.split('/')[-1].split('.')[0]}.zip"
 
-    convert_to_csv(input_file, zip_file_name, output_format=output_format)
+    convert_to_parquet(input_file, zip_file_name)
 
 
 if __name__ == "__main__":

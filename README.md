@@ -4,11 +4,11 @@
 
 **CASPER** – CSV Automation Service for Processing & Easy Retrieval
 
-CASPER is a Python package that converts NetCDF (.nc, .h5) files to one or more CSV files based on the dimensional schema in the NetCDF file.
+CASPER is a Python package that converts NetCDF (.nc, .h5) files to one or more CSV or Parquet files based on the dimensional schema in the NetCDF file.
 
 ### What does it do?
 
-Using xarray, CASPER obtains the dimensions identified in the NetCDF file and groups variables by the dimensional schema, then outputs each dimensional schema in a separate CSV file.
+Using xarray, CASPER obtains the dimensions identified in the NetCDF file and groups variables by the dimensional schema, then outputs each dimensional schema in a separate CSV or Parquet file.
 
 # Getting started, with uv
 
@@ -38,9 +38,24 @@ Zip file `TEMPO_NO2_L2_V04_S009G07.zip` including csv files:
 -   `TEMPO_NO2_L2_V04_S009G07-0.csv`, → dimension schema 1 (ie, dimensions ('mirror_step', 'xtrack', 'corner'))
 -   `TEMPO_NO2_L2_V04_S009G07-1.csv`, → dimension schema 2 (ie, dimensions('mirror_step', 'xtrack', 'swt_level'))
 
+### Output Format Options
+
+By default, CASPER generates CSV files. You can optionally specify Parquet format:
+
+```shell
+casper TEMPO_NO2_L2_V04_S009G07.nc --format parquet
+```
+
+**Output (Parquet):**
+
+Zip file `TEMPO_NO2_L2_V04_S009G07.zip` including parquet files:
+-   `TEMPO_NO2_L2_V04_S009G07-0.parquet`, → dimension schema 1 (ie, dimensions ('mirror_step', 'xtrack', 'corner'))
+-   `TEMPO_NO2_L2_V04_S009G07-1.parquet`, → dimension schema 2 (ie, dimensions('mirror_step', 'xtrack', 'swt_level'))
+
 
 ### Key Features
-- Reads NetCDF files and groups the data by shared dimensions and creates a CSV file for each dimension group.
+- Reads NetCDF files and groups the data by shared dimensions and creates a CSV or Parquet file for each dimension group.
+- Supports both CSV (default) and Parquet output formats
 - Command-line interface and Python API for integration with NASA Harmony service orchestrator
 - Verbose logging for debugging
 
@@ -61,7 +76,11 @@ uv sync
 ### Basic Usage
 
 ```shell
+# Generate CSV files (default)
 uv run casper filename
+
+# Generate Parquet files
+uv run casper filename --format parquet
 ```
 
 ## Contributing

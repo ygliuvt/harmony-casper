@@ -121,9 +121,6 @@ class CasperAdapter(BaseHarmonyAdapter):
                     zip_file,
                     logger=self.logger,
                 )
-
-                self.logger.info(f"Casper conversion completed. Zip file created {zip_file}")
-
                 staged_url = self._stage(zip_file, zip_file.name, "application/zip")
             # -- Output to STAC catalog --
             result.clear_items()
