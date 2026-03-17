@@ -126,7 +126,9 @@ def test_process_file_without_format_defaults_to_csv(
     mock_message, mock_config, mock_catalog, test_netcdf_file
 ):
     """Test that convert_to_csv is called by default when format.mime is not set"""
-    # Setup - no format attribute
+    # Setup - set format.mime to a default CSV mime type
+    mock_message.format = Mock()
+    mock_message.format.mime = "text/csv"
     mock_download.return_value = test_netcdf_file
     
     adapter = CasperAdapter(mock_message, catalog=mock_catalog, config=mock_config)
@@ -148,9 +150,10 @@ def test_process_file_with_format_but_no_mime_defaults_to_csv(
     mock_csv, mock_parquet, mock_download,
     mock_message, mock_config, mock_catalog, test_netcdf_file
 ):
-    """Test that convert_to_csv is called when format exists but mime is not set"""
-    # Setup - format exists but no mime attribute
-    mock_message.format = Mock(spec=[])  # Mock with no attributes
+    """Test that convert_to_csv is called when mime type contains 'csv'"""
+    # Setup - format.mime is set to application/csv (contains 'csv')
+    mock_message.format = Mock()
+    mock_message.format.mime = "application/csv"
     mock_download.return_value = test_netcdf_file
     
     adapter = CasperAdapter(mock_message, catalog=mock_catalog, config=mock_config)
@@ -168,11 +171,11 @@ def test_process_file_with_format_but_no_mime_defaults_to_csv(
 @patch('casper.harmony.service_adapter.download_file')
 @patch('casper.harmony.service_adapter.convert_to_parquet')
 @patch('casper.harmony.service_adapter.convert_to_csv')
-def test_process_file_with_other_mime_type_defaults_to_csv(
+def test_process_file_with_other_mime_type_defaults_to_parquet(
     mock_csv, mock_parquet, mock_download,
     mock_message, mock_config, mock_catalog, test_netcdf_file
 ):
-    """Test that convert_to_csv is called for non-parquet mime types"""
+    """Test that convert_to_parquet is called for mime types without 'csv' in them"""
     # Setup
     mock_message.format = Mock()
     mock_message.format.mime = "application/json"
@@ -185,8 +188,8 @@ def test_process_file_with_other_mime_type_defaults_to_csv(
         result = adapter.process_file(mock_catalog)
     
     # Verify
-    mock_csv.assert_called_once()
-    mock_parquet.assert_not_called()
+    mock_parquet.assert_called_once()
+    mock_csv.assert_not_called()
     assert isinstance(result, Catalog)
 
 
@@ -240,7 +243,9 @@ def test_process_file_logs_csv_conversion(
     mock_message, mock_config, mock_catalog, test_netcdf_file
 ):
     """Test that appropriate log message is generated for CSV conversion"""
-    # Setup - no format attribute
+    # Setup - set format.mime to CSV
+    mock_message.format = Mock()
+    mock_message.format.mime = "text/csv"
     mock_download.return_value = test_netcdf_file
     
     adapter = CasperAdapter(mock_message, catalog=mock_catalog, config=mock_config)
