@@ -1,3 +1,6 @@
+"""A NetCDF to CSV converter module"""
+
+import gc
 import json
 import logging
 import sys
@@ -111,6 +114,8 @@ def convert_to_csv(fname: str, zip_file: str, logger: Logger = default_logger, o
 
     try:
         # Open file as xarray datatree
+        # Note: We don't use chunks='auto' to avoid requiring dask as a dependency
+        # Instead, we use manual chunked processing in the conversion loop
         data = xr.open_datatree(fname)
 
         # Loops datatree items to gather info for various dimension groups
@@ -160,28 +165,19 @@ def convert_to_csv(fname: str, zip_file: str, logger: Logger = default_logger, o
                 }
 
                 # Convert to DataFrame and write based on output format
-                if output_format == 'parquet':
-                    df = ds.compute().to_dataframe().dropna(how="all", subset=vvs)
+                # Use chunked processing to reduce memory usage
+                with zf.open(op_file, "w", force_zip64=True) as csv_file:
+                    chunk_size = 1000  # Increased chunk size for better performance
                     
-                    # Write parquet file to a temporary location, then add to zip
-                    import tempfile
-                    import os
-                    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
-                        df.to_parquet(tmp.name, engine="pyarrow", compression="snappy")
-                        tmp.flush()
-                        zf.write(tmp.name, op_file)
-                        os.unlink(tmp.name)
-                    del df
-                else:  # csv format
-                    with zf.open(op_file, "w", force_zip64=True) as csv_file:
-                        chunk_size = 10
-                        data_len = 0
+                    # Determine the primary dimension for chunking
+                    if len(ds.sizes) > 0:
                         prime_dim = next(iter(ds.sizes.items()))
                         dim_var = prime_dim[0]
                         data_len = prime_dim[1]
+                        
                         for i in range(0, data_len, chunk_size):
                             # Process a slice of the dataset
-                            indexer = {dim_var: slice(i, i + chunk_size)}
+                            indexer = {dim_var: slice(i, min(i + chunk_size, data_len))}
                             ds_chunk = ds.isel(indexer)
                             chunk = ds_chunk.compute()
                             # Convert the small chunk to a pandas DataFrame
@@ -190,7 +186,16 @@ def convert_to_csv(fname: str, zip_file: str, logger: Logger = default_logger, o
                             # Write header for the first chunk only
                             df_chunk.to_csv(csv_file, header=(i == 0))
 
-                            del df_chunk
+                            del df_chunk, chunk, ds_chunk
+                    else:
+                        # No dimensions, small dataset - convert directly
+                        df = ds.compute().to_dataframe().dropna(how="all", subset=vvs)
+                        df.to_csv(csv_file, header=True)
+                        del df
+                
+                # Explicitly delete the dataset to free memory
+                del ds
+                gc.collect()  # Hint to garbage collector to free memory
 
                 logger.info(f" {op_file} added to zip file")
                 num_output_files += 1
@@ -206,6 +211,9 @@ def convert_to_csv(fname: str, zip_file: str, logger: Logger = default_logger, o
             json_file = "Readme.json"
             json_data = json.dumps(json_obj, indent=4)
             zf.writestr(json_file, json_data.encode("utf-8"))
+        
+        # Close the datatree to release resources
+        data.close()
 
     except Exception as e:
         logger.error("File conversion failed: %s", e)

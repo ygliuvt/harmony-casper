@@ -57,6 +57,7 @@ Individual parquet files in a directory called `TEMPO_NO2_L2_V04_S009G07_parquet
 ### Key Features
 - Reads NetCDF files and groups the data by shared dimensions and creates a CSV or Parquet file for each dimension group.
 - Supports both CSV (zipped) and Parquet (individual files) output formats
+- Memory-optimized chunked processing for large datasets (processes data in 1000-row chunks to minimize memory usage)
 - Command-line interface and Python API for integration with NASA Harmony service orchestrator
 - Verbose logging for debugging
 

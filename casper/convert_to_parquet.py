@@ -1,3 +1,6 @@
+"""A NetCDF to Parquet converter module"""
+
+import gc
 import json
 import logging
 import sys
@@ -110,6 +113,8 @@ def convert_to_parquet(fname: str, output_path: str, logger: Logger = default_lo
 
     try:
         # Open file as xarray datatree
+        # Note: We don't use chunks='auto' to avoid requiring dask as a dependency
+        # Instead, we use manual chunked processing in the conversion loop
         data = xr.open_datatree(fname)
 
         # Loops datatree items to gather info for various dimension groups
@@ -144,6 +149,9 @@ def convert_to_parquet(fname: str, output_path: str, logger: Logger = default_lo
             num_parquet_files = _write_parquet_files(
                 vals, data, input_filename, logger, output_dir=output_dir
             )
+        
+        # Close the datatree to release resources
+        data.close()
 
     except Exception as e:
         logger.error("File conversion failed: %s", e)
@@ -189,24 +197,90 @@ def _write_parquet_files(
             "variables": vvs,
         }
 
-        # Convert to DataFrame and write to parquet
-        df = ds.compute().to_dataframe().dropna(how="all", subset=vvs)
-
-        if zf is not None:
-            # Write parquet file to a temporary location, then add to zip
-            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
-                df.to_parquet(tmp.name, engine="pyarrow", compression="snappy")
-                tmp.flush()
-                zf.write(tmp.name, op_file)
-                os.unlink(tmp.name)
-            logger.info(f" {op_file} added to zip file")
+        # Convert to DataFrame and write to parquet using chunked processing
+        # to reduce memory usage
+        chunk_size = 1000  # Process 1000 rows at a time
+        
+        # Determine the primary dimension for chunking
+        if len(ds.sizes) > 0:
+            prime_dim = next(iter(ds.sizes.items()))
+            dim_var = prime_dim[0]
+            data_len = prime_dim[1]
         else:
-            # Write parquet file directly to output directory
-            output_file = output_dir / op_file
-            df.to_parquet(output_file, engine="pyarrow", compression="snappy")
-            logger.info(f" {op_file} created")
-
-        del df
+            # No dimensions, just convert directly (small dataset)
+            df = ds.compute().to_dataframe().dropna(how="all", subset=vvs)
+            data_len = 0
+        
+        if data_len > 0:
+            # Use chunked processing for large datasets
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            
+            if zf is not None:
+                # Write to temporary file then add to zip
+                with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+                    writer = None
+                    for i in range(0, data_len, chunk_size):
+                        # Process a slice of the dataset
+                        indexer = {dim_var: slice(i, min(i + chunk_size, data_len))}
+                        ds_chunk = ds.isel(indexer)
+                        chunk = ds_chunk.compute()
+                        df_chunk = chunk.to_dataframe().dropna(how="all", subset=vvs)
+                        
+                        if len(df_chunk) > 0:
+                            table = pa.Table.from_pandas(df_chunk)
+                            if writer is None:
+                                writer = pq.ParquetWriter(tmp.name, table.schema, compression='snappy')
+                            writer.write_table(table)
+                        
+                        del df_chunk, chunk, ds_chunk
+                    
+                    if writer is not None:
+                        writer.close()
+                    tmp.flush()
+                    zf.write(tmp.name, op_file)
+                    os.unlink(tmp.name)
+                logger.info(f" {op_file} added to zip file")
+            else:
+                # Write directly to output directory
+                output_file = output_dir / op_file
+                writer = None
+                for i in range(0, data_len, chunk_size):
+                    indexer = {dim_var: slice(i, min(i + chunk_size, data_len))}
+                    ds_chunk = ds.isel(indexer)
+                    chunk = ds_chunk.compute()
+                    df_chunk = chunk.to_dataframe().dropna(how="all", subset=vvs)
+                    
+                    if len(df_chunk) > 0:
+                        table = pa.Table.from_pandas(df_chunk)
+                        if writer is None:
+                            writer = pq.ParquetWriter(output_file, table.schema, compression='snappy')
+                        writer.write_table(table)
+                    
+                    del df_chunk, chunk, ds_chunk
+                
+                if writer is not None:
+                    writer.close()
+                logger.info(f" {op_file} created")
+        else:
+            # Small dataset without primary dimension, write directly
+            if zf is not None:
+                with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+                    df.to_parquet(tmp.name, engine="pyarrow", compression="snappy")
+                    tmp.flush()
+                    zf.write(tmp.name, op_file)
+                    os.unlink(tmp.name)
+                    del df
+                logger.info(f" {op_file} added to zip file")
+            else:
+                output_file = output_dir / op_file
+                df.to_parquet(output_file, engine="pyarrow", compression="snappy")
+                del df
+                logger.info(f" {op_file} created")
+        
+        # Explicitly delete the dataset to free memory
+        del ds
+        gc.collect()  # Hint to garbage collector to free memory
         num_parquet_files += 1
 
     # Create markdown and json Readme files
