@@ -1,34 +1,40 @@
 FROM python:3.12-slim
 
-ARG CASPER_VERSION
-ENV SETUPTOOLS_SCM_PRETEND_VERSION=$CASPER_VERSION
+ARG VERSION=0.0.1
+ENV CASPER_VERSION=$VERSION
+
 RUN apt-get update \
-     && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+  && apt-get install -y --no-install-recommends \
     gcc \
     libnetcdf-dev \
-    && pip3 install --no-cache-dir --upgrade pip cython uv \
-    && apt-get purge -y --auto-remove gcc \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+  && pip install --no-cache-dir --upgrade \
+    pip \
+    cython \
+    uv \
+    virtualenv \
+  && apt-get purge -y --auto-remove gcc \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
 
-# Create a new user
 RUN adduser --quiet --disabled-password --shell /bin/sh \
---home /home/dockeruser --gecos "" --uid 1000 dockeruser
+  --home /home/dockeruser --gecos "" --uid 1000 dockeruser
 
-RUN mkdir -p /worker && chown dockeruser /worker
+RUN mkdir -p /worker && chown dockeruser:dockeruser /worker
 
 WORKDIR /worker
 
-COPY --chown=dockeruser:dockeruser pyproject.toml README.md LICENSE ./
+# ✅ Copy EVERYTHING needed for build (including source)
+COPY --chown=dockeruser:dockeruser pyproject.toml uv.lock README.md LICENSE ./
 COPY --chown=dockeruser:dockeruser casper ./casper
-COPY --chown=dockeruser:dockeruser uv.lock ./
-COPY --chown=dockeruser:dockeruser docker-entrypoint.sh ./
 
 USER dockeruser
-RUN uv sync --extra harmony --frozen
-RUN uv tool run hatch version
+
+# ✅ Now build works because package exists
+RUN uv sync --extra harmony --frozen --no-editable
+
+COPY --chown=dockeruser:dockeruser docker-entrypoint.sh ./
 
 RUN chmod +x ./docker-entrypoint.sh
 
-# Run the service
 ENTRYPOINT ["./docker-entrypoint.sh"]

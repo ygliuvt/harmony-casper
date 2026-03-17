@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "casper"
-dynamic = ["version"]
+version = "0.0.1"
 description = "Convert NetCDF4 to one or more CSV files"
 license = {file = "LICENSE"}
 readme = "README.md"
@@ -17,9 +17,10 @@ dependencies = [
     "xarray>=2024.3.0",
     "pystac>=0.5.3",
     "importlib-metadata>=8.4.0",
-    "requests (>=2.32.5,<3.0.0)",
+    "requests>=2.32.5,<3.0.0",
     "harmony-service-lib>=2.0.0",
-    "pyarrow>=15.0.0"]
+    "pyarrow>=15.0.0"
+]
 
 [project.urls]
 Repository = "https://github.com/nasa/harmony-casper"
@@ -28,8 +29,8 @@ Changelog = "https://github.com/nasa/harmony-casper/blob/main/CHANGELOG.md"
 "Bug Tracker" = "https://github.com/nasa/harmony-casper/issues"
 
 [project.scripts]
-casper_harmony = 'casper.harmony.cli:main'
-casper = 'casper.cli:main'
+casper_harmony = "casper.harmony.cli:main"
+casper = "casper.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -52,13 +53,6 @@ integration = [
     "harmony-py>=0.4.15"
 ]
 
-[tool.hatch.version]
-source = "vcs"
-
-[tool.hatch.version.raw-options]
-# This tells hatch-vcs to use an env var if git metadata is unavailable
-version_scheme = "no-guess-dev"
-
 [[tool.mypy.overrides]]
 module = "netCDF4.*"
 ignore_missing_imports = true
@@ -70,41 +64,34 @@ exclude = [
   "doc",
   "_typed_ops.pyi",
 ]
-# Allow lines to be as long as 100.
 line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
 ignore = [
-    "E402",  # module level import not at top of file
-    "E501",  # line too long - let ruff format handle it
-    "E731",  # do not assign a lambda expression, use a def
+    "E402",
+    "E501",
+    "E731",
 ]
 select = [
-  "F",   # Pyflakes
-  "E",   # Pycodestyle errors
-  "W",   # Pycodestyle warnings
-  "I",   # isort
-  "UP",  # Pyupgrade
-  "B",   # Bugbear (catches common bugs)
-  "C4",  # Comprehensions
-  "SIM", # Simplifications
+  "F",
+  "E",
+  "W",
+  "I",
+  "UP",
+  "B",
+  "C4",
+  "SIM",
 ]
 
 [tool.coverage.run]
 concurrency = ["multiprocessing"]
 
 [tool.coverage.report]
-# Regexes for lines to exclude from consideration
 exclude_lines = [
-    # Have to re-enable the standard pragma
     "pragma: no cover",
-
-    # Don't complain if tests don't hit defensive assertion code:
     "raise AssertionError",
     "raise NotImplementedError",
-
-    # Don't complain if non-runnable code isn't run:
     "if 0:",
     "if __name__ == .__main__.:"
 ]
