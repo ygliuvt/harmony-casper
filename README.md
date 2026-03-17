@@ -83,6 +83,29 @@ uv run casper filename
 uv run casper filename --format parquet
 ```
 
+## Running Tests
+
+CASPER uses pytest for testing. To run the test suite:
+
+```shell
+# Run all tests
+uv run pytest tests/
+
+# Run tests with verbose output
+uv run pytest tests/ -v
+
+# Run a specific test file
+uv run pytest tests/unit/test_service_adapter.py -v
+
+# Run tests with coverage report
+uv run pytest tests/ --cov=casper
+```
+
+The test suite includes:
+- Unit tests for file conversion (CSV and Parquet)
+- Service adapter tests for Harmony integration
+- CLI and file operations tests
+
 ## Contributing
 
 Issues and pull requests welcome on [GitHub](https://github.com/nasa/harmony-casper/).

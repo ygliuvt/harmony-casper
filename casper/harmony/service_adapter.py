@@ -37,6 +37,7 @@ from pystac import Catalog, Item
 from pystac.item import Asset
 
 from casper.convert_to_csv import convert_to_csv
+from casper.convert_to_parquet import convert_to_parquet
 from casper.harmony.download_worker import download_file
 from casper.harmony.util import (
     _get_item_url,
@@ -88,11 +89,12 @@ class CasperAdapter(BaseHarmonyAdapter):
 
             # Get all the items from the catalog, including from child or linked catalogs
             items = list(self.get_all_catalog_items(catalog))
-            datetimes = _get_output_date_range(items)
 
             # Just return if catalog contains no items
             if len(items) == 0:
                 return result
+
+            datetimes = _get_output_date_range(items)
 
             # # --- Get granule filepath (url) ---
             netcdf_url = _get_item_url(items[0])
@@ -116,11 +118,21 @@ class CasperAdapter(BaseHarmonyAdapter):
                 zip_file = Path(temp_dir) / zip_file
 
                 # --- Run Casper ---
-                convert_to_csv(
-                    input_file,
-                    zip_file,
-                    logger=self.logger,
-                )
+                # Check format.mime to determine which conversion function to use
+                if hasattr(self.message, 'format') and hasattr(self.message.format, 'mime') and self.message.format.mime == "application/parquet":
+                    self.logger.info("Converting to Parquet format.")
+                    convert_to_parquet(
+                        input_file,
+                        zip_file,
+                        logger=self.logger,
+                    )
+                else:
+                    self.logger.info("Converting to CSV format.")
+                    convert_to_csv(
+                        input_file,
+                        zip_file,
+                        logger=self.logger,
+                    )
                 staged_url = self._stage(zip_file, zip_file.name, "application/zip")
             # -- Output to STAC catalog --
             result.clear_items()
