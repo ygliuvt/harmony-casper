@@ -122,6 +122,7 @@ wheels = [
 
 [[package]]
 name = "casper"
+version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "harmony-service-lib" },

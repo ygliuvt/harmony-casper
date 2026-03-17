@@ -117,9 +117,11 @@ class CasperAdapter(BaseHarmonyAdapter):
                 zip_file = generate_output_filename(zip_file_name, ext="zip", is_reformatted=True)
                 zip_file = Path(temp_dir) / zip_file
 
+                output_mime = self.message.format.mime
+                output_format = 'csv' if 'csv' in output_mime else 'parquet'
+
                 # --- Run Casper ---
-                # Check format.mime to determine which conversion function to use
-                if hasattr(self.message, 'format') and hasattr(self.message.format, 'mime') and self.message.format.mime == "application/parquet":
+                if output_format == 'parquet':
                     self.logger.info("Converting to Parquet format.")
                     convert_to_parquet(
                         input_file,

@@ -3,4 +3,4 @@ set -euo pipefail
 
 VERSION="${1:-0.0.1}"
 
-docker build -t "asdc-trade/casper:${VERSION}" .
+docker build --platform linux/amd64 -t "asdc-trade/casper:${VERSION}" .
