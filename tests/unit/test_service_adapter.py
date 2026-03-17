@@ -82,12 +82,15 @@ def test_process_file_with_parquet_format(
     
     adapter = CasperAdapter(mock_message, catalog=mock_catalog, config=mock_config)
     
-    with patch.object(adapter, '_stage', return_value='https://example.com/staged.zip'):
+    with patch.object(adapter, '_stage_directory', return_value=['https://example.com/file1.parquet', 'https://example.com/file2.parquet']):
         # Execute
         result = adapter.process_file(mock_catalog)
     
     # Verify
     mock_parquet.assert_called_once()
+    # Verify it was called with create_zip=False
+    call_args = mock_parquet.call_args
+    assert call_args[1].get('create_zip') == False
     mock_csv.assert_not_called()
     assert isinstance(result, Catalog)
     assert len(list(result.get_items())) == 1
@@ -183,7 +186,7 @@ def test_process_file_with_other_mime_type_defaults_to_parquet(
     
     adapter = CasperAdapter(mock_message, catalog=mock_catalog, config=mock_config)
     
-    with patch.object(adapter, '_stage', return_value='https://example.com/staged.zip'):
+    with patch.object(adapter, '_stage_directory', return_value=['https://example.com/file1.parquet']):
         # Execute
         result = adapter.process_file(mock_catalog)
     
@@ -227,7 +230,7 @@ def test_process_file_logs_parquet_conversion(
     adapter = CasperAdapter(mock_message, catalog=mock_catalog, config=mock_config)
     
     with patch.object(adapter.logger, 'info') as mock_logger_info, \
-         patch.object(adapter, '_stage', return_value='https://example.com/staged.zip'):
+         patch.object(adapter, '_stage_directory', return_value=['https://example.com/file.parquet']):
         # Execute
         result = adapter.process_file(mock_catalog)
         

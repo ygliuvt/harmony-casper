@@ -107,15 +107,11 @@ class CasperAdapter(BaseHarmonyAdapter):
                     netcdf_url, temp_dir, self.message.accessToken, self.config
                 )
 
-                # Zip filename is the input filename without the file extension
-                zip_file_name = Path(input_file).stem
+                # Base filename is the input filename without the file extension
+                base_file_name = Path(input_file).stem
 
                 # Create the subdirectory
                 self.logger.info("Running Casper.")
-
-                # Use Harmony generated filename
-                zip_file = generate_output_filename(zip_file_name, ext="zip", is_reformatted=True)
-                zip_file = Path(temp_dir) / zip_file
 
                 output_mime = self.message.format.mime
                 output_format = 'csv' if 'csv' in output_mime else 'parquet'
@@ -123,19 +119,27 @@ class CasperAdapter(BaseHarmonyAdapter):
                 # --- Run Casper ---
                 if output_format == 'parquet':
                     self.logger.info("Converting to Parquet format.")
+                    # Create output directory for parquet files (no zip)
+                    output_dir = Path(temp_dir) / base_file_name
                     convert_to_parquet(
                         input_file,
-                        zip_file,
+                        str(output_dir),
                         logger=self.logger,
+                        create_zip=False,
                     )
+                    # Stage all parquet files from the directory
+                    staged_urls = self._stage_directory(output_dir, "application/parquet")
                 else:
                     self.logger.info("Converting to CSV format.")
+                    # Use Harmony generated filename for zip
+                    zip_file = generate_output_filename(base_file_name, ext="zip", is_reformatted=True)
+                    zip_file = Path(temp_dir) / zip_file
                     convert_to_csv(
                         input_file,
                         zip_file,
                         logger=self.logger,
                     )
-                staged_url = self._stage(zip_file, zip_file.name, "application/zip")
+                    staged_urls = [self._stage(zip_file, zip_file.name, "application/zip")]
             # -- Output to STAC catalog --
             result.clear_items()
             properties = {
@@ -150,13 +154,29 @@ class CasperAdapter(BaseHarmonyAdapter):
                 properties,
             )
 
-            asset = Asset(
-                staged_url,
-                title=zip_file.name,
-                media_type="application/zip",
-                roles=["data"],
-            )
-            item.add_asset("data", asset)
+            # Add assets for each staged file
+            if output_format == 'parquet':
+                # Multiple parquet files as separate assets
+                for idx, staged_url in enumerate(staged_urls):
+                    file_name = Path(staged_url).name
+                    asset = Asset(
+                        staged_url,
+                        title=file_name,
+                        media_type="application/parquet",
+                        roles=["data"],
+                    )
+                    item.add_asset(f"data_{idx}", asset)
+            else:
+                # Single zip file
+                staged_url = staged_urls[0]
+                asset = Asset(
+                    staged_url,
+                    title=Path(staged_url).name,
+                    media_type="application/zip",
+                    roles=["data"],
+                )
+                item.add_asset("data", asset)
+            
             result.add_item(item)
 
             self.logger.info("STAC catalog creation complete.")
@@ -206,3 +226,30 @@ class CasperAdapter(BaseHarmonyAdapter):
             location=self.message.stagingLocation,
             cfg=self.config,
         )
+
+    def _stage_directory(self, local_dir: Path, mime: str) -> list[str]:
+        """
+        Stages all files in a directory to either S3 or the local filesystem.
+        
+        Parameters
+        ----------
+        local_dir : Path
+            The directory containing files to stage
+        mime : string
+            The mime type to apply to the staged files
+        
+        Returns
+        -------
+        list[str]
+            A list of URLs to the staged files
+        """
+        staged_urls = []
+        
+        # Get all files in the directory (excluding subdirectories)
+        files = [f for f in local_dir.iterdir() if f.is_file()]
+        
+        for file_path in sorted(files):
+            staged_url = self._stage(str(file_path), file_path.name, mime)
+            staged_urls.append(staged_url)
+            
+        return staged_urls

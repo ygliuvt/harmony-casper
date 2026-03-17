@@ -80,7 +80,7 @@ def json_readme(ds, input_filename, json_obj):
     return
 
 
-def convert_to_parquet(fname: str, zip_file: str, logger: Logger = default_logger) -> int:
+def convert_to_parquet(fname: str, output_path: str, logger: Logger = default_logger, create_zip: bool = True) -> int:
     """
     Converts NetCDF file to one or more Parquet files. The number of files will
     be based on the dimensions identified in the NetCDF file.
@@ -89,10 +89,12 @@ def convert_to_parquet(fname: str, zip_file: str, logger: Logger = default_logge
     ----------
     fname: str
         The name of the NetCDF file to be converted to Parquet file(s)
-    zip_file: str
-        The name of the zipfile to create
+    output_path: str
+        The path where output files will be written (zip file if create_zip=True, directory if False)
     logger: Logger
         Logger instance for output messages
+    create_zip: bool
+        Whether to create a zip file (default: True) or output individual files to a directory
 
     Returns
     -------
@@ -125,69 +127,104 @@ def convert_to_parquet(fname: str, zip_file: str, logger: Logger = default_logge
         input_filename = Path(fname).name
         vals = list(schemas.items())
 
-        # Create the zip file object in write mode
-        with zipfile.ZipFile(
-            zip_file, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
-        ) as zf:
+        if create_zip:
+            # Create the zip file object in write mode
+            with zipfile.ZipFile(
+                output_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
+            ) as zf:
+                logger.info(f"Creating {len(vals)} Parquet files for {input_filename}")
+                num_parquet_files = _write_parquet_files(
+                    vals, data, input_filename, logger, zf=zf
+                )
+        else:
+            # Create output directory if it doesn't exist
+            output_dir = Path(output_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"Creating {len(vals)} Parquet files for {input_filename}")
-
-            for idx in range(len(vals)):
-                dims, vvs = vals[idx]
-                # Use Harmony generated filename
-                op_file = f"{input_filename}-{idx}.parquet"
-                op_file = generate_output_filename(op_file, ext="parquet", is_reformatted=True)
-                ds = xr.combine_by_coords([data[vv].rename(vv) for vv in vvs])
-                # Order columns: dimensions, non-dimensional coordinates, rest of variables
-                cols = list(dims) + list(ds.coords) + vvs
-                ds = ds[cols]
-
-                # Add info to markdown and json dictionaries for creation of Readmes
-                md[dims] = {
-                    "filename": op_file,
-                    "keys": dims,
-                    "coords": list(ds.coords),
-                    "vrbs": vvs,
-                }
-                json_obj[op_file] = {
-                    "dimensions": ",".join(list(dims)),
-                    "non-dimensional coordinates": ",".join(
-                        [c for c in list(ds.coords) if c not in list(dims)]
-                    ),
-                    "variables": vvs,
-                }
-
-                # Convert to DataFrame and write to parquet
-                df = ds.compute().to_dataframe().dropna(how="all", subset=vvs)
-                
-                # Write parquet file to a temporary location, then add to zip
-                import tempfile
-                import os
-                with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
-                    df.to_parquet(tmp.name, engine="pyarrow", compression="snappy")
-                    tmp.flush()
-                    zf.write(tmp.name, op_file)
-                    os.unlink(tmp.name)
-
-                del df
-
-                logger.info(f" {op_file} added to zip file")
-                num_parquet_files += 1
-
-            # Create markdown and json Readme files
-            readme_contents = create_markdown(md, data, input_filename)
-            readme_file = "Readme.md"
-            with zf.open(readme_file, "w") as file:
-                file.write(readme_contents.encode("utf-8"))
-
-            # Create JSON file with pretty printing
-            json_readme(data, input_filename, json_obj)
-            json_file = "Readme.json"
-            json_data = json.dumps(json_obj, indent=4)
-            zf.writestr(json_file, json_data.encode("utf-8"))
+            num_parquet_files = _write_parquet_files(
+                vals, data, input_filename, logger, output_dir=output_dir
+            )
 
     except Exception as e:
         logger.error("File conversion failed: %s", e)
         raise
+
+    return num_parquet_files
+
+
+def _write_parquet_files(
+    vals, data, input_filename, logger, zf=None, output_dir=None
+) -> int:
+    """Helper function to write parquet files either to a zip or directory"""
+    import tempfile
+    import os
+    
+    num_parquet_files = 0
+    md = {}
+    json_obj: dict[str, str | dict] = {}
+    json_obj["Notice"] = "The Readme.md file includes the same information"
+
+    for idx in range(len(vals)):
+        dims, vvs = vals[idx]
+        # Use Harmony generated filename
+        op_file = f"{input_filename}-{idx}.parquet"
+        op_file = generate_output_filename(op_file, ext="parquet", is_reformatted=True)
+        ds = xr.combine_by_coords([data[vv].rename(vv) for vv in vvs])
+        # Order columns: dimensions, non-dimensional coordinates, rest of variables
+        cols = list(dims) + list(ds.coords) + vvs
+        ds = ds[cols]
+
+        # Add info to markdown and json dictionaries for creation of Readmes
+        md[dims] = {
+            "filename": op_file,
+            "keys": dims,
+            "coords": list(ds.coords),
+            "vrbs": vvs,
+        }
+        json_obj[op_file] = {
+            "dimensions": ",".join(list(dims)),
+            "non-dimensional coordinates": ",".join(
+                [c for c in list(ds.coords) if c not in list(dims)]
+            ),
+            "variables": vvs,
+        }
+
+        # Convert to DataFrame and write to parquet
+        df = ds.compute().to_dataframe().dropna(how="all", subset=vvs)
+
+        if zf is not None:
+            # Write parquet file to a temporary location, then add to zip
+            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+                df.to_parquet(tmp.name, engine="pyarrow", compression="snappy")
+                tmp.flush()
+                zf.write(tmp.name, op_file)
+                os.unlink(tmp.name)
+            logger.info(f" {op_file} added to zip file")
+        else:
+            # Write parquet file directly to output directory
+            output_file = output_dir / op_file
+            df.to_parquet(output_file, engine="pyarrow", compression="snappy")
+            logger.info(f" {op_file} created")
+
+        del df
+        num_parquet_files += 1
+
+    # Create markdown and json Readme files
+    readme_contents = create_markdown(md, data, input_filename)
+    readme_file = "Readme.md"
+    json_readme(data, input_filename, json_obj)
+    json_file = "Readme.json"
+    json_data = json.dumps(json_obj, indent=4)
+
+    if zf is not None:
+        # Add to zip file
+        with zf.open(readme_file, "w") as file:
+            file.write(readme_contents.encode("utf-8"))
+        zf.writestr(json_file, json_data.encode("utf-8"))
+    else:
+        # Write to output directory
+        (output_dir / readme_file).write_text(readme_contents)
+        (output_dir / json_file).write_text(json_data)
 
     return num_parquet_files
 

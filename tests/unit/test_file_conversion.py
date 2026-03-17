@@ -91,3 +91,48 @@ def test_parquet_conversion():
             file_path = Path(temp_dir) / parquet_file
             assert file_path.exists()
             assert file_path.stat().st_size > 0
+
+
+def test_parquet_conversion_no_zip():
+    """Test that convert_to_parquet with create_zip=False creates individual files"""
+    fname = str(
+        data_for_tests_dir
+        / "unit-test-data"
+        / "TEMPO_HCHO_L3_V04_20250912T210435Z_S012_subsetted.nc4"
+    )
+
+    with TemporaryDirectory() as temp_dir:
+        output_dir = Path(temp_dir) / "output"
+        
+        # Convert test file to Parquet files without zipping
+        num_parquet_files = convert_to_parquet(
+            fname,
+            str(output_dir),
+            logger=module_logger,
+            create_zip=False,
+        )
+        
+        # Verify that output directory was created
+        assert output_dir.exists()
+        assert output_dir.is_dir()
+        
+        # Verify that parquet files were created
+        assert num_parquet_files > 0
+        
+        # Get list of files in output directory
+        files = list(output_dir.iterdir())
+        parquet_files = [f for f in files if f.suffix == '.parquet']
+        readme_files = [f for f in files if 'Readme' in f.name]
+        
+        # Check that directory contains parquet files and readme files
+        assert len(parquet_files) == num_parquet_files
+        assert len(readme_files) >= 1  # At least one readme file (md or json)
+        
+        # Verify that parquet files exist and are not empty
+        for parquet_file in parquet_files:
+            assert parquet_file.exists()
+            assert parquet_file.stat().st_size > 0
+        
+        # Verify readme files exist
+        assert any(f.name == 'Readme.md' for f in readme_files)
+        assert any(f.name == 'Readme.json' for f in readme_files)

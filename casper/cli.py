@@ -3,8 +3,10 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from casper.convert_to_csv import convert_to_csv
+from casper.convert_to_parquet import convert_to_parquet
 from casper.file_ops import (
     valid_input_file,
     valid_workable_file,
@@ -18,8 +20,17 @@ def run_casper(input_file: str, output_format: str = 'csv'):
 
     if not valid_workable_file(input_file):
         raise ValueError("Input file not valid")
-    zip_file_name = f"{input_file.split('/')[-1].split('.')[0]}.zip"
-    convert_to_csv(input_file, zip_file_name, output_format=output_format)
+    
+    base_name = Path(input_file).stem
+    
+    if output_format == 'parquet':
+        # For parquet, create output directory (no zip)
+        output_dir = f"{base_name}_parquet"
+        convert_to_parquet(input_file, output_dir, create_zip=False)
+    else:
+        # For CSV, create zip file
+        zip_file_name = f"{base_name}.zip"
+        convert_to_csv(input_file, zip_file_name)
 
 
 def main() -> None:

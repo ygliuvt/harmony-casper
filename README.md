@@ -40,7 +40,7 @@ Zip file `TEMPO_NO2_L2_V04_S009G07.zip` including csv files:
 
 ### Output Format Options
 
-By default, CASPER generates CSV files. You can optionally specify Parquet format:
+By default, CASPER generates CSV files in a zip archive. You can optionally specify Parquet format:
 
 ```shell
 casper TEMPO_NO2_L2_V04_S009G07.nc --format parquet
@@ -48,14 +48,15 @@ casper TEMPO_NO2_L2_V04_S009G07.nc --format parquet
 
 **Output (Parquet):**
 
-Zip file `TEMPO_NO2_L2_V04_S009G07.zip` including parquet files:
--   `TEMPO_NO2_L2_V04_S009G07-0.parquet`, → dimension schema 1 (ie, dimensions ('mirror_step', 'xtrack', 'corner'))
--   `TEMPO_NO2_L2_V04_S009G07-1.parquet`, → dimension schema 2 (ie, dimensions('mirror_step', 'xtrack', 'swt_level'))
+Individual parquet files in a directory called `TEMPO_NO2_L2_V04_S009G07_parquet/`:
+-   `TEMPO_NO2_L2_V04_S009G07-0_reformatted.parquet` → dimension schema 1 (ie, dimensions ('mirror_step', 'xtrack', 'corner'))
+-   `TEMPO_NO2_L2_V04_S009G07-1_reformatted.parquet` → dimension schema 2 (ie, dimensions('mirror_step', 'xtrack', 'swt_level'))
+-   `Readme.md` and `Readme.json` files with metadata
 
 
 ### Key Features
 - Reads NetCDF files and groups the data by shared dimensions and creates a CSV or Parquet file for each dimension group.
-- Supports both CSV (default) and Parquet output formats
+- Supports both CSV (zipped) and Parquet (individual files) output formats
 - Command-line interface and Python API for integration with NASA Harmony service orchestrator
 - Verbose logging for debugging
 
